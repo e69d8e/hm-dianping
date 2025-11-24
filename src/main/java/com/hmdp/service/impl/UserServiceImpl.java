@@ -41,7 +41,6 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
 
-    private final StringRedisTemplate redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
 
     @Override
@@ -58,7 +57,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 //        session.setAttribute("code", code);
         // 保存验证码到 redis
 
-        redisTemplate.opsForValue().set(RedisConstants.LOGIN_CODE_KEY + phone, code, RedisConstants.LOGIN_CODE_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(RedisConstants.LOGIN_CODE_KEY + phone, code, RedisConstants.LOGIN_CODE_TTL, TimeUnit.MINUTES);
         // 模拟发送验证码
         log.info("发送验证码成功，验证码为：{}", code);
         // 返回结果
@@ -87,7 +86,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 //        session.setAttribute("user", BeanUtil.copyProperties(user, UserDTO.class));
 //        return Result.ok();
         // 校验验证码 从 redis 中获取
-        String cacheCode = redisTemplate.opsForValue().get(RedisConstants.LOGIN_CODE_KEY + loginForm.getPhone());
+        String cacheCode = stringRedisTemplate.opsForValue().get(RedisConstants.LOGIN_CODE_KEY + loginForm.getPhone());
         if (cacheCode == null || !cacheCode.equals(loginForm.getCode())) {
             return Result.fail("验证码错误");
         }
@@ -101,11 +100,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         // 保存用户信息到 redis 中
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
         // StringRedisSerializer 无法将 Long 类型数据序列化为 String 要将 Long 类型数据序列化为 String
-        redisTemplate.opsForHash().putAll(RedisConstants.LOGIN_USER_KEY + token, BeanUtil.beanToMap(userDTO, new HashMap<>()
+        stringRedisTemplate.opsForHash().putAll(RedisConstants.LOGIN_USER_KEY + token, BeanUtil.beanToMap(userDTO, new HashMap<>()
                 , CopyOptions.create().ignoreNullValue().setFieldValueEditor((fileName, value) -> value == null ? "" : value.toString())
         ));
         // 设置有效期
-        redisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.SECONDS);
         // 返回 token
         return Result.ok(token);
     }
@@ -168,5 +167,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             tmp = tmp >>> 1;
         }
         return Result.ok(count);
+    }
+
+    @Override
+    public Result logout(String authorization) {
+        Boolean isLogout = stringRedisTemplate.delete(RedisConstants.LOGIN_USER_KEY + authorization);
+        if (!isLogout) {
+            return Result.fail("退出登录失败");
+        }
+        return Result.ok();
     }
 }
