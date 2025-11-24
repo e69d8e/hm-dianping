@@ -1,11 +1,7 @@
 package com.hmdp.handler;
 
-import cn.hutool.core.bean.BeanUtil;
-import com.hmdp.dto.UserDTO;
-import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.UserHolder;
 import lombok.Data;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import javax.servlet.http.HttpServletRequest;
@@ -13,7 +9,6 @@ import javax.servlet.http.HttpServletResponse;
 
 @Data
 public class LoginInterceptor implements HandlerInterceptor {
-
 
 
     /**
