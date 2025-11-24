@@ -1,28 +1,28 @@
 package com.hmdp.service.impl;
 
-import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.bean.copier.CopyOptions;
-import cn.hutool.core.util.BooleanUtil;
-import cn.hutool.json.JSONUtil;
+import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
+import com.hmdp.utils.SystemConstants;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.geo.*;
+import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
- *  服务实现类
+ * 服务实现类
  * </p>
  *
  * @author 虎哥
@@ -34,6 +34,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     private final StringRedisTemplate stringRedisTemplate;
     private final CacheClient cacheClient;
+
     @Override
     public Result queryById(Long id) {
 //        // 从 redis 查询缓存
@@ -107,5 +108,63 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 删除缓存
         stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY + id);
         return Result.ok();
+    }
+
+    @Override
+    public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
+        // 判断是否有地理位置信息
+        if (x == null || y == null) {
+            Page<Shop> page = query()
+                    .eq("type_id", typeId)
+                    .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
+            // 返回数据
+            return Result.ok(page.getRecords());
+        }
+        // 计算分页参数
+        int from = (current - 1) * SystemConstants.DEFAULT_PAGE_SIZE;
+        int end = current * SystemConstants.DEFAULT_PAGE_SIZE;
+        String key = RedisConstants.SHOP_GEO_KEY + typeId;
+        // 查询 redis 按照距离排序
+        // Redis 版本 >= 6.2
+        /*GeoResults<RedisGeoCommands.GeoLocation<String>> res = stringRedisTemplate.opsForGeo()
+                .search(
+                        key,
+                        GeoReference.fromCoordinate(x, y),
+                        new Distance(5000),
+                        RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(end));*/
+        GeoResults<RedisGeoCommands.GeoLocation<String>> res = stringRedisTemplate.opsForGeo()
+                .radius(
+                        key,
+                        new Circle(new Point(x, y), new Distance(5000)),
+                        RedisGeoCommands.GeoRadiusCommandArgs.newGeoRadiusArgs()
+                                .includeDistance()
+                                .limit(end)
+                                .sortAscending());
+        if (res == null) {
+            return Result.ok(Collections.emptyList());
+        }
+        List<GeoResult<RedisGeoCommands.GeoLocation<String>>> content = res.getContent();
+        if (content.size() <= from) {
+            return Result.ok(Collections.emptyList());
+        }
+        List<Long> ids = new ArrayList<>(content.size());
+        Map<String, Distance> distanceMap = new HashMap<>(content.size());
+        content.stream().skip(from).forEach(item -> {
+            // 店铺id
+            String shopId = item.getContent().getName();
+            ids.add(Long.valueOf(shopId));
+            // 距离
+            Distance distance = item.getDistance();
+            distanceMap.put(shopId, distance);
+        });
+
+        // 根据店铺id查询
+        String idStr = StrUtil.join(",", ids);
+        List<Shop> shops = query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list();
+
+        for (Shop shop : shops) {
+            shop.setDistance(distanceMap.get(shop.getId().toString()).getValue());
+        }
+        return Result.ok(shops);
     }
 }
