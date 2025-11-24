@@ -1,6 +1,5 @@
 package com.hmdp.utils;
 
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -25,6 +24,7 @@ public class RedisIdWork { // redis id 生成器
         // 生成序列号
         String date = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         long count = stringRedisTemplate.opsForValue().increment("icr:" + key + ":" + date);
+        // 拼接并返回
         return timeStamp << COUNT_BITS | count;
     }
 }

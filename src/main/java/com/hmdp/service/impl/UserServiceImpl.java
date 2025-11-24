@@ -13,13 +13,18 @@ import com.hmdp.service.IUserService;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.SystemConstants;
+import com.hmdp.utils.UserHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpSession;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -37,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
 
     private final StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result sendCode(String phone, HttpSession session) {
@@ -111,7 +117,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         newUser.setNickName(SystemConstants.USER_NICK_NAME_PREFIX + RandomUtil.randomString(10));
         return newUser;
     }
-    
+
     @Override
     public Result queryUserById(Long userId) {
         // 查询详情
@@ -122,5 +128,45 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
         // 返回
         return Result.ok(userDTO);
+    }
+
+    @Override
+    public Result sign() {
+        Long userId = UserHolder.getUser().getId();
+        LocalDateTime now = LocalDateTime.now();
+        String key = RedisConstants.USER_SIGN_KEY + userId + now.format(DateTimeFormatter.ofPattern("yyyyMM"));
+        stringRedisTemplate.opsForValue().setBit(key, now.getDayOfMonth() - 1, true);
+        return Result.ok();
+    }
+
+    @Override
+    public Result signCount() {
+        Long userId = UserHolder.getUser().getId();
+        LocalDateTime now = LocalDateTime.now();
+        String key = RedisConstants.USER_SIGN_KEY + userId + now.format(DateTimeFormatter.ofPattern("yyyyMM"));
+        List<Long> result = stringRedisTemplate.opsForValue().bitField(
+                key,
+                BitFieldSubCommands.create()
+                        .get(BitFieldSubCommands.BitFieldType.unsigned(now.getDayOfMonth()))
+                        .valueAt(0) // 从第0位开始读取
+        );
+        log.info("result: {}", result);
+        if (result == null || result.isEmpty()) {
+            return Result.ok(0);
+        }
+        Long tmp = result.get(0);
+        if (tmp == null || tmp == 0) {
+            return Result.ok(0);
+        }
+        int count = 0;
+        while (tmp != 0) {
+            if ((tmp & 1) == 0) {
+                break;
+            }
+            count++;
+            // 无符号右移
+            tmp = tmp >>> 1;
+        }
+        return Result.ok(count);
     }
 }
