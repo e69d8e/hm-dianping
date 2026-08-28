@@ -133,12 +133,28 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
     }
 
+    private static final String QUEUE_NAME = "stream.orders";
+    private static final String GROUP_NAME = "g1";
+
     private createVoucherOrder createVoucherOrder;
 
     @PostConstruct // 执行时机：创建对象之后
     public void init() {
+        // 初始化 Redis Stream 消费者组
+        initStreamGroup();
         createVoucherOrder = new createVoucherOrder();
         SECKILL_ORDER_EXECUTOR.submit(createVoucherOrder);
+    }
+
+    private void initStreamGroup() {
+        try {
+            // 尝试创建消费者组，若 Stream 不存在 Spring Data Redis 会自动创建 (MKSTREAM)
+            stringRedisTemplate.opsForStream().createGroup(QUEUE_NAME, ReadOffset.from("0"), GROUP_NAME);
+            log.info("Redis Stream [{}] 消费者组 [{}] 初始化成功", QUEUE_NAME, GROUP_NAME);
+        } catch (Exception e) {
+            // 如果消费者组已经存在（Redis 会返回 BUSYGROUP 错误），直接忽略
+            log.info("Redis Stream 消费者组 [{}] 已存在或已被创建: {}", GROUP_NAME, e.getMessage());
+        }
     }
 
     @PreDestroy
@@ -258,7 +274,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                         // 应用正在关闭，忽略异常
                         break;
                     }
-                    log.error("处理订单异常", e);
+                    log.error("处理 pending-list 订单异常", e);
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             }
         }
