@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "黑马点评 (HM-DianPing) 高层运行时架构",
+    "locale": "zh-CN",
+    "output": "hm-dianping-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1120, 420],
+    "views": [
+      {
+        "id": "seckill-path",
+        "label": "秒杀主链路",
+        "focus": ["client", "nginx", "controller", "service", "redis", "stream_consumer", "mysql"],
+        "note": "突出从客户端发起秒杀到 Lua 预检、Stream 异步削峰、消费者落库的全流程主要路径"
+      },
+      {
+        "id": "cache-governance",
+        "label": "缓存与锁治理",
+        "focus": ["controller", "service", "cache_client", "redisson", "redis"],
+        "note": "展示 CacheClient 逻辑过期/防击穿与 Redisson 分布式锁协同"
+      },
+      {
+        "id": "trust-boundaries",
+        "label": "信任边界与鉴权",
+        "focus": ["client", "nginx", "interceptor", "controller", "redis"],
+        "note": "标出外部不可信客户端、DMZ 反向代理与应用服务区之间的双拦截器鉴权与 Token 刷新"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Web / H5 移动端",
+      "sublabel": "Vue 客户端 (Client)",
+      "pos": [40, 190],
+      "size": [130, 56]
+    },
+    {
+      "id": "nginx",
+      "type": "cloud",
+      "label": "Nginx 反向代理",
+      "sublabel": "静态托管 & 网关 (:8080)",
+      "pos": [230, 190],
+      "size": [140, 56]
+    },
+    {
+      "id": "interceptor",
+      "type": "security",
+      "label": "Token 双拦截器",
+      "sublabel": "Refresh + Login 拦截",
+      "tag": "ThreadLocal",
+      "pos": [450, 70],
+      "size": [140, 56]
+    },
+    {
+      "id": "controller",
+      "type": "backend",
+      "label": "RESTful 控制层",
+      "sublabel": "Spring Boot (:8081)",
+      "brand": "spring",
+      "pos": [450, 190],
+      "size": [140, 56]
+    },
+    {
+      "id": "stream_consumer",
+      "type": "backend",
+      "label": "Stream 异步消费者",
+      "sublabel": "线程池消费 stream.orders",
+      "tag": "Pending-List",
+      "pos": [450, 310],
+      "size": [140, 56]
+    },
+    {
+      "id": "cache_client",
+      "type": "backend",
+      "label": "CacheClient 客户端",
+      "sublabel": "防穿透 / 逻辑过期",
+      "pos": [680, 70],
+      "size": [140, 56]
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "业务服务层",
+      "sublabel": "Service (秒杀/社交/商户)",
+      "brand": "spring",
+      "pos": [680, 190],
+      "size": [140, 56]
+    },
+    {
+      "id": "redisson",
+      "type": "security",
+      "label": "Redisson 锁管理器",
+      "sublabel": "看门狗 / 可重入锁",
+      "pos": [910, 70],
+      "size": [140, 56]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis 中间件",
+      "sublabel": "缓存/Stream/GEO/ZSet",
+      "brand": "redis",
+      "pos": [910, 190],
+      "size": [140, 56]
+    },
+    {
+      "id": "mysql",
+      "type": "database",
+      "label": "MySQL 数据库",
+      "sublabel": "MyBatis-Plus 持久化",
+      "brand": "mysql",
+      "pos": [910, 310],
+      "size": [140, 56]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "外部客户端 (Untrusted Client Tier)",
+      "wraps": ["client"]
+    },
+    {
+      "kind": "region",
+      "label": "接入代理边界 (DMZ Ingress Gateway)",
+      "wraps": ["nginx"]
+    },
+    {
+      "kind": "security-group",
+      "label": "应用核心可信区 (Spring Boot App Layer :8081)",
+      "wraps": ["interceptor", "controller", "service", "cache_client", "stream_consumer"]
+    },
+    {
+      "kind": "region",
+      "label": "数据与中间件私网区 (Internal Storage & Middleware)",
+      "wraps": ["redisson", "redis", "mysql"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn-client-nginx",
+      "from": "client",
+      "to": "nginx",
+      "label": "HTTP :8080",
+      "variant": "emphasis"
+    },
+    {
+      "id": "conn-nginx-controller",
+      "from": "nginx",
+      "to": "controller",
+      "label": "代理转发 /api/*",
+      "variant": "emphasis"
+    },
+    {
+      "id": "conn-controller-interceptor",
+      "from": "controller",
+      "to": "interceptor",
+      "label": "Token 鉴权",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "conn-controller-service",
+      "from": "controller",
+      "to": "service",
+      "label": "业务调度",
+      "variant": "emphasis"
+    },
+    {
+      "id": "conn-service-redis",
+      "from": "service",
+      "to": "redis",
+      "label": "Lua 秒杀预检",
+      "variant": "emphasis"
+    },
+    {
+      "id": "conn-redis-consumer",
+      "from": "redis",
+      "to": "stream_consumer",
+      "label": "XREADGROUP",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "conn-consumer-mysql",
+      "from": "stream_consumer",
+      "to": "mysql",
+      "label": "异步落库建单",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "conn-service-cache",
+      "from": "service",
+      "to": "cache_client",
+      "label": "防击穿治理",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "conn-cache-redisson",
+      "from": "cache_client",
+      "to": "redisson",
+      "label": "分布式锁",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "⚡ 核心秒杀主链路 (Highlighted Path)",
+      "items": [
+        "客户端请求经 Nginx 反向代理至 Spring Boot 应用层",
+        "双拦截器校验 Token 并存入 ThreadLocal (UserHolder)",
+        "Service 执行 seckill.lua 原子校验库存与一人一单并推入 Stream 队列",
+        "StreamConsumer 线程池异步消费订单落库 MySQL 并 ACK"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "🛡️ 外部依赖与信任边界 (Boundaries)",
+      "items": [
+        "外部接入层 (Client)：公网访问 Nginx 静态资源及反向代理接口",
+        "应用服务区 (Trusted Cluster)：内部共享 ThreadLocal 认证上下文",
+        "数据私网区 (Internal Storage)：Redis 6.0+ 与 MySQL 8.0 仅内网开放"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "📦 缓存治理与并发保护 (Governance)",
+      "items": [
+        "CacheClient 封装防穿透空值缓存与防击穿逻辑过期机制",
+        "Redisson 分布式锁看门狗机制防止锁误释放与并发超卖",
+        "Redis Stream Pending-List 自愈消费者应对异常与漏单"
+      ]
+    }
+  ]
+}

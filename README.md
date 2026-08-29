@@ -22,11 +22,23 @@
 
 ## 🏗️ 系统架构设计
 
+### 1. 运行时高层架构与信任边界 (Runtime Architecture)
+
+系统采用微服务分层设计，清晰划分外部不可信客户端、DMZ 接入网关、应用核心服务区与内网数据存储四大信任边界：
+
+<p align="center">
+  <img src="./docs/architecture/hm-dianping-architecture.png" alt="黑马点评高层运行时架构图" width="95%" />
+</p>
+
+> 💡 **交互式架构图**：查看支持主题切换（浅色/深色）、故事回放与各视角切片的高保真交互式架构图：[hm-dianping-architecture.html](./docs/architecture/hm-dianping-architecture.html)。
+
+### 2. 系统拓扑与数据流转
+
 ```mermaid
 graph TD
     Client["📱 客户端 (Web / H5 / Mobile)"]
     
-    subgraph Gateway["接入与代理层"]
+    subgraph Gateway["接入与代理层 (DMZ Ingress)"]
         Nginx["Docker Nginx (Port: 8080)<br/>静态资源托管 & 反向代理"]
     end
 
@@ -38,7 +50,7 @@ graph TD
         StreamConsumer["Redis Stream 异步订单消费者<br/>(线程池 + Pending-List 自愈)"]
     end
 
-    subgraph StorageLayer["数据与中间件层"]
+    subgraph StorageLayer["数据与中间件层 (Internal)"]
         Redis["⚡ Redis 6.0+<br/>• String / Hash: 验证码 & Token & 缓存<br/>• Set / ZSet: 点赞排行 & 共同关注 & Feed流<br/>• Stream: 异步秒杀消息队列<br/>• GEO: 附近商户空间索引<br/>• Bitmap / HyperLogLog: 签到与UV"]
         Redisson["🔒 Redisson 分布式锁"]
         MySQL["🗄️ MySQL 8.0 关系型数据库<br/>(MyBatis-Plus ORM 持久化)"]
@@ -58,6 +70,7 @@ graph TD
 ```
 
 ---
+
 
 ## 🛠️ 技术栈清单
 
@@ -371,6 +384,22 @@ mvn spring-boot:run
 2. 批量生成 1000 个用户的登录 Token，并写入 JMeter CSV 数据集；
 3. 配置 1000 线程并发请求秒杀下单接口 `POST /voucher-order/seckill/{id}`；
 4. 观察 Redis 库存准确扣减为 0，MySQL 订单精准生成 100 条，无超卖与重复下单，且 Stream 队列全量平稳消费。
+
+### 3. Playwright E2E 全流程自动化测试
+
+
+项目支持基于 **Playwright CLI** 的端到端自动化业务回归测试，覆盖从公网客户端到后端异步落库的完整交互链路：
+
+| 测试场景 | 重点验证项 | 验证结果 |
+| :--- | :--- | :---: |
+| **首页与分类导航** | 移动端视口加载、10大业务分类、瀑布流推荐笔记 | ✅ `PASSED` |
+| **商户列表与 GEO** | 分类筛选、距离实时测算与基于 Redis GEO 的排序 | ✅ `PASSED` |
+| **商户详情与代金券** | 商铺基础数据、营业时间、评价列表与代金券加载 | ✅ `PASSED` |
+| **登录鉴权与边界测试** | 非法手机号拦截、错误验证码校验、Token 生成与会话保持 | ✅ `PASSED` |
+| **个人主页与签到** | 用户信息展示、我的笔记列表、Redis Bitmap 签到打卡计数 | ✅ `PASSED` |
+| **笔记社交互动** | 点赞/取消点赞实时联动、关注/取关博主、共同关注检索 | ✅ `PASSED` |
+| **探店笔记发布** | 关联商户抽屉搜索与选中、图文发布与个人主页同步回显 | ✅ `PASSED` |
+| **高并发秒杀下单** | Lua 原子库存扣减、Redis Stream 异步消息入队与一人一单重复拦截 | ✅ `PASSED` |
 
 ---
 
